@@ -10,7 +10,6 @@
 #SBATCH --mail-type=ALL              # Type of email notification- BEGIN,END,FAIL,ALL
 #SBATCH --mail-user=milo.s.johnson.13@gmail.com  # Email to which notifications will be sent
 
-module load Anaconda3/5.0.1-fasrc01
-source activate milo_simple_conda5
+source activate milo_py37
 
-python BT_parse.py ../accessory_files/VTn_Demult.csv /n/holyscratch01/desai_lab/mjohnson/VTn/output/ /n/holyscratch01/desai_lab/mjohnson/VTn/data/reads/ "${SLURM_ARRAY_TASK_ID}" VTn_BFA
+python BT_parse.py ../accessory_files/VTn_demult.csv /n/holyscratch01/desai_lab/mjohnson/VTn/output/ /n/holyscratch01/desai_lab/mjohnson/VTn/data/reads/ "${SLURM_ARRAY_TASK_ID}" VTn_BFA

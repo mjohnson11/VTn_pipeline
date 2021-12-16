@@ -1,2 +1,7 @@
 accessory_files/TP_CS_BC_Assoc_filtered_clusters.csv
-.DS_store
+.DS_Store
+.ipynb_checkpoints
+scripts/.ipynb_checkpoints
+Analysis/.ipynb_checkpoints
+Analysis/defunct/.ipynb_checkpoints
+._.DS_Store

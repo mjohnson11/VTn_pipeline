@@ -178,8 +178,9 @@ def s_estimation(segs, rep_info, output_base, input_base, experiment, ll_cutoff,
 
         with open(output_base + seg + '/' + seg + '_edge_s.csv', 'w') as outfile:
             writer = csv.writer(outfile)
-            writer.writerow(['Edge', 'mean.s', 'stderr.s', 'total.cbcs', 'pval', 'rep1.cbcs', 'rep1.s', 'rep1.stderr.s', 
-                             'rep2.cbcs', 'rep2.s', 'rep2.stderr.s'])
+            writer.writerow(['Edge', 'mean.s', 'std_bcs', 'std_neut', 'stderr.s', 'total.cbcs', 'pval', 
+                             'rep1.cbcs', 'rep1.s', 'rep1_std_bcs', 'rep1_std_neut', 'rep1.stderr.s', 
+                             'rep2.cbcs', 'rep2.s', 'rep2_std_bcs', 'rep2_std_neut', 'rep2.stderr.s'])
             neut_bc_s = defaultdict(list)
             for edge in neut_edges:
                 if edge in edge_to_bc_s:
@@ -196,18 +197,27 @@ def s_estimation(segs, rep_info, output_base, input_base, experiment, ll_cutoff,
                     # What we really want for standard errors is the standard error of the difference between s for the edge and the neutral edges
                     # The standard error of a difference is the square root of the sum of the two errors
                     std_err_d = dict()
+                    all_neut_s = []
                     for r in usable_reps:
+                        all_neut_s += neut_bc_s[r]
                         all_s += tmp[r]
                         if len(tmp[r]) > 1:
-                            std_err_d[r] = np.sqrt((np.std(tmp[r], ddof=1)/np.sqrt(len(tmp[r])))**2 + (np.std(neut_bc_s[r], ddof=1)/np.sqrt(len(neut_bc_s[r])))**2)
+                            #std_err_d[r] = np.sqrt((np.std(tmp[r], ddof=1)/np.sqrt(len(tmp[r])))**2 + (np.std(neut_bc_s[r], ddof=1)/np.sqrt(len(neut_bc_s[r])))**2)
+                            std_err_d[r] = [(np.std(tmp[r], ddof=1)/np.sqrt(len(tmp[r]))), (np.std(neut_bc_s[r], ddof=1)/np.sqrt(len(neut_bc_s[r])))]
+                            std_err_d[r].append(np.sqrt(std_err_d[r][0]**2+std_err_d[r][1]**2))
                         else: # if there is only one barcode, we use the standard deviation of bc s in the other replicate as an estimate of the standard error
                             other_rep = [rep for rep in usable_reps if rep != r][0] # since we require 3 cbcs, the other rep must have at least 2
-                            std_err_d[r] = np.sqrt(np.std(tmp[other_rep], ddof=1)**2 + (np.std(neut_bc_s[r], ddof=1)/np.sqrt(len(neut_bc_s[r])))**2)
-                    std_errs = np.array([std_err_d[r] for r in usable_reps])
+                            std_err_d[r] = [(np.std(tmp[other_rep], ddof=1)), (np.std(neut_bc_s[r], ddof=1)/np.sqrt(len(neut_bc_s[r])))]
+                            std_err_d[r].append(np.sqrt(std_err_d[r][0]**2+std_err_d[r][1]**2))
+                    std_errs = np.array([std_err_d[r][2] for r in usable_reps])
                     # inverse variance averaging code modified from Venkataram et al. 2016 code
                     use_mean = np.sum(means*np.power(std_errs, -2))/np.sum(np.power(std_errs,-2))
-                    # standard error is based on deviations of each bc s from this mean
-                    use_std_err = np.sqrt(np.sum([(s - use_mean)**2 for s in all_s])/(len(all_s)-1))/np.sqrt(len(all_s))
+                    # standard error is based on deviations of each bc s from this mean and the standard error from the neutral bcs
+                    se = np.sqrt((np.sum([(s - use_mean)**2 for s in all_s])/(len(all_s)-1))/len(all_s))
+                    # Neutral bc standard error
+                    nbc_error = (np.std(all_neut_s, ddof=1)/np.sqrt(len(all_neut_s)))
+                    # standard error is based on deviations of each bc s from this mean and the standard error from the neutral bcs
+                    use_std_err = np.sqrt(se**2 + nbc_error**2)
                     # for significance testing, I fit the cbc s data by ordinary least squares with replicate as a fixed effect predictor
                     # and ask whether the fitness effect is different from zero (for each mutation)
                     mat = []
@@ -217,11 +227,11 @@ def s_estimation(segs, rep_info, output_base, input_base, experiment, ll_cutoff,
                     td = pd.DataFrame(mat, columns=['replicate', 's'])
                     # sig testing
                     ps = list(ols('s ~ replicate', data=td).fit().pvalues)
-                    tmp_row = [edge, use_mean, use_std_err, np.sum(num_cbcs), ps[0]] # first p val is for teh intercept - is the mutation's effect non-zero
+                    tmp_row = [edge, use_mean, se, nbc_error, use_std_err, np.sum(num_cbcs), ps[0]] # first p val is for the intercept - is the mutation's effect non-zero
                     for r in rep_info[seg]:
                         if r in usable_reps:
-                            tmp_row += [len(tmp[r]), np.mean(tmp[r]), std_err_d[r]]
+                            tmp_row += [len(tmp[r]), np.mean(tmp[r])] + std_err_d[r]
                         else:
-                            tmp_row += [np.nan, np.nan, np.nan]
+                            tmp_row += [np.nan, np.nan, np.nan, np.nan, np.nan]
 
                     writer.writerow(tmp_row)

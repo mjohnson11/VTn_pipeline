@@ -181,10 +181,13 @@ assay_names = ['P1_YPD', 'P3_SC', 'P1_SC']
 a_plates = {'P1': P1_plate, 'P3': P3_plate}
 cols = ['Well', 's', 'Ref_Freq_T0', 'Ref_Freq_T1']
 for a in assay_names:
-    comb_d[a] = final_d[a+'_R1'][cols].merge(final_d[a+'_R2'][cols], on='Well', how='inner', suffixes=('_R1', '_R2'))
+    r1 = all_data[(all_data['Assay']==a) & (all_data['Rep']==1)]
+    r2 = all_data[(all_data['Assay']==a) & (all_data['Rep']==2)]
+    comb_d[a] = r1[cols].merge(r2[cols], on='Well', how='inner', suffixes=('_R1', '_R2'))
     comb_d[a]['Strain'] = comb_d[a]['Well'].map(a_plates[a[:2]])
     comb_d[a] = comb_d[a][pd.notnull(comb_d[a]['Strain'])]
     comb_d[a]['s'] = np.mean(comb_d[a][['s_R1', 's_R2']], axis=1)
+    comb_d[a]['stderr'] = np.std(comb_d[a][['s_R1', 's_R2']], axis=1)/np.sqrt(2)
     comb_d[a]['Ref_Freq_T0'] = np.nanmean(comb_d[a][['Ref_Freq_T0_R1', 'Ref_Freq_T0_R2']], axis=1)
     comb_d[a]['Ref_Freq_T1'] = np.nanmean(comb_d[a][['Ref_Freq_T1_R1', 'Ref_Freq_T1_R2']], axis=1)
     
@@ -213,14 +216,16 @@ for a in comb_d:
         td = tmd[tmd['Strain']==p+'_A']
         assert len(td)==1
         tmp.append(td.iloc[0]['s'])
+        tmp.append(td.iloc[0]['stderr'])
         tmp.append(td.iloc[0]['Ref_Freq_T0'])
         td = tmd[tmd['Strain']==p+'_B']
         assert len(td)==1
         tmp.append(td.iloc[0]['s'])
+        tmp.append(td.iloc[0]['stderr'])
         tmp.append(td.iloc[0]['Ref_Freq_T0'])
         mat.append(tmp)
     
-    compare_results[a] = pd.DataFrame(mat, columns=['Gen_pop', 'Pop_s', 'Pop_Ref_Freq_T0', 'Clone_A_s', 'Clone_A_Ref_Freq_T0', 'Clone_B_s', 'Clone_B_Ref_Freq_T0'])
+    compare_results[a] = pd.DataFrame(mat, columns=['Gen_pop', 'Pop_s', 'Pop_Ref_Freq_T0', 'Clone_A_s', 'Clone_A_s_stderr', 'Clone_A_Ref_Freq_T0', 'Clone_B_s', 'Clone_B_s_stderr', 'Clone_B_Ref_Freq_T0'])
     compare_results[a]['Clone_s'] = np.nanmean(compare_results[a][['Clone_A_s', 'Clone_B_s']], axis=1)
 
 
@@ -230,21 +235,26 @@ for a in ['P1_YPD', 'P3_SC']:
     
 env_fix = {'YPD': 'YPD_30C', 'SC': 'SC_37C'}
 for a in compare_results:
-    compare_results[a]['Environment'] = [env_fix[a.split('_')[1]]]*len(compare_results[a])
-    compare_results[a]['Pop'] = compare_results[a]['Gen_pop'].str.split('_').str[1]
-    compare_results[a]['Gen'] = compare_results[a]['Gen_pop'].str.split('_').str[0].str[1:]
-    compare_results[a]['Sample'] = compare_results[a]['Gen_pop']+'_'+compare_results[a]['Environment']
+    compare_results[a]['Sample'] = compare_results[a]['Gen_pop']+'-'+[env_fix[a.split('_')[1]]]*len(compare_results[a])
     compare_results[a]['Fitness'] = np.nanmean(compare_results[a][['Clone_A_s', 'Clone_B_s']], axis=1)
+    compare_results[a]['Fitness_std'] = np.nanstd(compare_results[a][['Clone_A_s', 'Clone_B_s']], axis=1, ddof=1)/np.sqrt(2)
     compare_results[a]['Freq_T0'] = 1-np.nanmean(compare_results[a][['Clone_A_Ref_Freq_T0', 'Clone_B_Ref_Freq_T0']], axis=1)
     
     
 together = pd.concat([compare_results[a] for a in compare_results])
-cols = ['Sample', 'Gen_pop', 'Gen', 'Pop', 'Environment', 'Fitness', 'Freq_T0', 's_VLTE', 's_VLTE_scaled',
-        'Clone_A_Ref_Freq_T0', 'Clone_A_s', 'Clone_B_Ref_Freq_T0', 'Clone_B_s', 'Pop_Ref_Freq_T0', 'Pop_s']
+cols = ['Sample', 'Fitness', 'Fitness_std', 'Freq_T0', 's_VLTE', 's_VLTE_scaled',
+        'Clone_A_s', 'Clone_A_s_stderr', 'Clone_A_Ref_Freq_T0', 
+        'Clone_B_s', 'Clone_B_s_stderr', 'Clone_B_Ref_Freq_T0', 
+        'Pop_Ref_Freq_T0', 'Pop_s']
 
 vtn_x = together[cols]
-vtn_x['Cond'] = vtn_x['Pop'].str[:2] + '_' + vtn_x['Environment']
-g70_fits = {i[0]: i[1] for i in np.array(vtn_x[vtn_x.Gen==70][['Cond', 'Fitness']].groupby('Cond').mean().reset_index()[['Cond', 'Fitness']])}
-vtn_x['Fitness_sub_70'] = vtn_x.apply(lambda row: row['Fitness']-g70_fits[row['Cond']], axis=1)
 vtn_x.to_csv('../../output/VTn_x.csv', index=False)
 
+s_cols = {'s': 'Fitness', 's_stderr': 'Fitness_std'}
+r1 = vtn_x[['Sample']+['Clone_A_'+s for s in s_cols]].rename(columns={'Clone_A_'+s:s_cols[s] for s in s_cols})
+r1['Clone'] = 'A'
+r2 = vtn_x[['Sample']+['Clone_B_'+s for s in s_cols]].rename(columns={'Clone_B_'+s:s_cols[s] for s in s_cols})
+r2['Clone'] = 'B'
+vtn_s_clones = pd.concat([r1, r2])
+vtn_s_clones['Sample'] = vtn_s_clones['Sample']+'-'+vtn_s_clones['Clone']
+vtn_s_clones[['Sample', 'Fitness', 'Fitness_std']].to_csv('../../output/VTn_x_clones.csv', index=False)
